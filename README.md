@@ -6,4 +6,6 @@ $ docker compose pull
 $ docker compose up -d
 ```
 
-https://localhost
+## Open http://localhost
+
+Default admin account/password `admin/zabbix`
