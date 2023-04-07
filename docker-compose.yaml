@@ -1,0 +1,142 @@
+version: "3.5"
+services:
+  mysql:
+    image: mysql:8.0
+    restart: unless-stopped
+    command: "--default-authentication-plugin=mysql_native_password
+              --character-set-server=utf8mb4
+              --collation-server=utf8mb4_unicode_ci"
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_DATABASE}
+      MYSQL_USER: ${MYSQL_USER}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+    volumes:
+      - mysql-data:/var/lib/mysql
+    
+  server:
+    image: zabbix/zabbix-server-mysql:ubuntu-6.4-latest
+    restart: always
+    ports:
+      - "10051:10051"
+    environment:
+      DB_SERVER_HOST: mysql
+      DB_SERVER_PORT: 3306
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_DATABASE}
+      MYSQL_USER: ${MYSQL_USER}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+      ZBX_ENABLE_SNMP_TRAPS: "true"
+      ZBX_STARTDISCOVERERS: 16
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+      - zabbix-alertscripts:/usr/lib/zabbix/alertscripts:ro
+      - zabbix-externalscripts:/usr/lib/zabbix/externalscripts:ro
+      - zabbix-export:/var/lib/zabbix/export:rw
+      - zabbix-modules:/var/lib/zabbix/modules:ro
+      - zabbix-enc:/var/lib/zabbix/enc:ro
+      - zabbix-ssh_keys:/var/lib/zabbix/ssh_keys:ro
+      - zabbix-mibs:/var/lib/zabbix/mibs:ro
+      - zabbix-snmptraps:/var/lib/zabbix/snmptraps:rw
+    ulimits:
+      nproc: 65535
+      nofile:
+        soft: 20000
+        hard: 40000
+    deploy:
+      resources:
+        limits:
+          cpus: '0.70'
+          memory: 1G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+    depends_on:
+      - mysql
+    stop_grace_period: 30s
+    sysctls:
+      - net.ipv4.ip_local_port_range=1024 65000
+      - net.ipv4.conf.all.accept_redirects=0
+      - net.ipv4.conf.all.secure_redirects=0
+      - net.ipv4.conf.all.send_redirects=0
+  web:
+    image: zabbix/zabbix-web-nginx-mysql:ubuntu-6.4-latest
+    restart: always
+    ports:
+      - "80:8080"
+      - "443:8443"
+    environment:
+      DB_SERVER_HOST: mysql
+      DB_SERVER_PORT: 3306
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_DATABASE}
+      MYSQL_USER: ${MYSQL_USER}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+      ZBX_SERVER_HOST: server
+      PHP_TZ: "Asia/Taipei"
+      ZBX_SERVER_NAME: ${ZBX_SERVER_NAME}
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+      - zabbix-web-ssl:/etc/ssl/nginx:ro
+      - zabbix-web-modules:/usr/share/zabbix/modules/:ro
+    deploy:
+      resources:
+        limits:
+          cpus: '0.70'
+          memory: 512M
+        reservations:
+          cpus: '0.5'
+          memory: 256M
+    depends_on:
+      - mysql
+      - server
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    stop_grace_period: 10s
+    sysctls:
+      - net.core.somaxconn=65535
+  agent:
+    image: zabbix/zabbix-agent:ubuntu-6.4-latest
+    restart: always 
+    profiles:
+      - full
+      - all
+    ports:
+      - "10050:10050"
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+      - zabbix-agentd:/etc/zabbix/zabbix_agentd.d:ro
+      - zabbix-modules:/var/lib/zabbix/modules:ro
+      - zabbix-enc:/var/lib/zabbix/enc:ro
+      - zabbix-ssh_keys:/var/lib/zabbix/ssh_keys:ro
+    deploy:
+      resources:
+        limits:
+          cpus: '0.2'
+          memory: 128M
+        reservations:
+          cpus: '0.1'
+          memory: 64M
+      mode: global
+    environment:
+      ZBX_SERVER_HOST: server
+      ZBX_HOSTNAME: server
+    privileged: true
+
+volumes:
+  mysql-data:
+  zabbix-alertscripts:
+  zabbix-externalscripts:
+  zabbix-export:
+  zabbix-modules:
+  zabbix-enc:
+  zabbix-ssh_keys:
+  zabbix-mibs:
+  zabbix-snmptraps:
+  zabbix-web-ssl:
+  zabbix-web-modules:
+  zabbix-agentd:
